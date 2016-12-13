@@ -4,54 +4,55 @@
 class Robot: public IterativeRobot {
 private:
 
-	PixyTracker pixy;
+	PixyTracker *pixy;
 
-	void RobotInit()
-	{
+	void RobotInit() {
+		pixy = new PixyTracker();
+		pixy->Start();
+	}
+
+	void DisabledInit() {
+	}
+
+	void AutonomousInit() {
+	}
+
+	void AutonomousPeriodic() {
 
 	}
 
-	void DisabledInit()
-	{
-		pixy.Close();
-	}
-
-	void AutonomousInit()
-	{
-		pixy.Start();
-	}
-
-	void AutonomousPeriodic()
-	{
-
-	}
-
-	void TeleopInit()
-	{
-		pixy.Start();
+	void TeleopInit() {
 	}
 
 	void TeleopPeriodic()
 	{
-		int32_t pan_angle, tilt_angle;
-		int blocks_received;
+		int blocks_found;
+		int signature = 1;
+		PixyTracker::Target target{0};
 
-		try {
-			blocks_received = pixy.Track(pan_angle, tilt_angle);
-		} catch (...) {
-			pixy.Reset();
+		blocks_found = pixy->Track(signature, target);
+
+		if (blocks_found > 0) {
+			// Print target info
+			printf("sig:%2d x:%4d y:%4d width:%4d height:%4d\n",
+					target.block.signature,
+					target.block.x,
+					target.block.y,
+					target.block.width,
+					target.block.height);
+			printf("Pan: %4d, Tilt: %4d\n", target.pan, target.tilt);
 		}
-
-		printf("Pan: %4d, Tilt: %4d\n", pan_angle, tilt_angle);
-
 
 		// TODO: Other robot tasks...
 	}
 
-	void TestPeriodic()
-	{
+	void TestInit() {
 		// Print Pixy firmware version
-		std::cout << "Pixy Firmware Version: " << pixy.Version() << std::endl;
+		std::cout << "Pixy Firmware Version: " << pixy->Version() << std::endl;
+	}
+
+	void TestPeriodic() {
+
 	}
 };
 

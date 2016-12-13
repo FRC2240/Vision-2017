@@ -18,20 +18,25 @@
 
 class PixyTracker {
 public:
+	// Target Info
+	struct Target {
+		Block block;
+		int pan;
+		int tilt;
+	};
+
+	// Start
 	void Start() {
 		pixy_init_status = pixy_init();
 		initialize_gimbals();
 	}
 
-	void Reset() {
-		pixy_close();
-		Start();
-	}
-
+	// Close
 	void Close() {
 		pixy_close();
 	}
 
+	// Version
 	std::string Version() {
 		uint16_t major, minor, build;
 
@@ -44,12 +49,25 @@ public:
 		return buffer.str();
 	}
 
-	int Track(int32_t& pan_angle, int32_t& tilt_angle) {
+	// Track
+	// Track the largest target of the specified signature
+	// signature: signature index to track
+	// target:    target info
+	// return:    number of targets detected
+	int Track(int signature, Target& target) {
 		if (pixy_init_status != 0) {
 			printf("Error: pixy_init() [%d] ", pixy_init_status);
 			pixy_error(pixy_init_status);
 			return pixy_init_status;
 		}
+
+		// No new data
+		if (!pixy_blocks_are_new()) {
+			return 0;
+		}
+
+		int target_index = -1;
+		int blocks_found = 0;
 
 		// Get blocks from Pixy
 		int blocks_copied = pixy_get_blocks(BLOCK_BUFFER_SIZE, &blocks[0]);
@@ -61,54 +79,55 @@ public:
 		}
 
 		if (blocks_copied > 0) {
-			// Calculate the difference between the center of Pixy's focus and the target.
-			int pan_error  = PIXY_X_CENTER - blocks[0].x;
-			int tilt_error = blocks[0].y - PIXY_Y_CENTER;
+			for (int i = 0; i < blocks_copied; ++i) {
+				// Ignore blocks that don't match the desired signature
+				if (blocks[i].signature != signature) {
+					continue;
+				}
 
-			// Apply corrections to the pan/tilt with the goal of putting the target in the center of Pixy's focus.
-			gimbal_update(&pan, pan_error);
-			gimbal_update(&tilt, tilt_error);
+				// Count the blocks of the matching signature
+				++blocks_found;
 
-			int result = pixy_rcs_set_position(PIXY_RCS_PAN_CHANNEL, pan.position);
-			if (result < 0) {
-				printf("Error: pixy_rcs_set_position() [%d] ", result);
-				pixy_error(result);
-				return result;
-			}
+				// The first block found of the matching signature is the largest -- track it!
+				if (target_index < 0) {
+					target_index = i;
 
-			result = pixy_rcs_set_position(PIXY_RCS_TILT_CHANNEL, tilt.position);
-			if (result < 0) {
-				printf("Error: pixy_rcs_set_position() [%d] ", result);
-				pixy_error(result);
-				return result;
-			}
+					target.block = blocks[i];
 
-			if (frame_index % 50 == 0) {
-				printf("Pan: %4d, Tilt: %4d\n", pan.position, tilt.position);
+					// Calculate the difference between the center of Pixy's focus and the target.
+					int pan_error  = PIXY_X_CENTER - blocks[i].x;
+					int tilt_error = blocks[0].y - PIXY_Y_CENTER;
 
-				// Display received blocks //
-				printf("frame %d:\n", frame_index);
-				for(int index = 0; index != blocks_copied; ++index) {
-					printf("  sig:%2d x:%4d y:%4d width:%4d height:%4d\n",
-							blocks[index].signature,
-							blocks[index].x,
-							blocks[index].y,
-							blocks[index].width,
-							blocks[index].height);
+					// Apply corrections to the pan/tilt with the goal of putting the target in the center of Pixy's focus.
+					gimbal_update(&pan, pan_error);
+					gimbal_update(&tilt, tilt_error);
+
+					target.pan = pan.position;
+					target.tilt = tilt.position;
+
+					int result = pixy_rcs_set_position(PIXY_RCS_PAN_CHANNEL, pan.position);
+					if (result < 0) {
+						printf("Error: pixy_rcs_set_position() [%d] ", result);
+						pixy_error(result);
+						return result;
+					}
+
+					result = pixy_rcs_set_position(PIXY_RCS_TILT_CHANNEL, tilt.position);
+					if (result < 0) {
+						printf("Error: pixy_rcs_set_position() [%d] ", result);
+						pixy_error(result);
+						return result;
+					}
 				}
 			}
-			frame_index++;
 		}
 
-		pan_angle = pan.position;
-		tilt_angle = tilt.position;
-		return blocks_copied;
+		return blocks_found;
 	}
 
 private:
-	Block 	 blocks [BLOCK_BUFFER_SIZE];
-	int      pixy_init_status;
-	int      frame_index = 0;
+	Block 	blocks [BLOCK_BUFFER_SIZE];
+	int		pixy_init_status;
 	std::stringstream buffer;
 
 	// PID control variables
