@@ -11,7 +11,7 @@ The [PixyMon](http://cmucam.org/projects/cmucam5/wiki/Install_PixyMon_on_Mac) ap
 [libpixyusb](https://github.com/charmedlabs/pixy) depends on some [Boost](http://www.boost.org) libraries and [libusb](http://www.libusb.org), so all of these needed to be built using the [arm-frc-linux toolchain](http://first.wpi.edu/FRC/roborio/toolchains). The necessary header files and cross-compiled libraries are included in the Eclipse project.
 
 ## PixyTracker
-The PixyTracker class is an example implementation for controlling the Pixy and tracking one target (based on the [Pan/Tilt demo code])https://github.com/charmedlabs/pixy/tree/master/src/host/pantilt_in_c).
+The PixyTracker class is an example implementation for controlling the Pixy and tracking one target [based on the [Pan/Tilt demo code](https://github.com/charmedlabs/pixy/tree/master/src/host/pantilt_in_c).
 
 ## Cross Compiling libpixyusb
 No code modifications were necessary, is was just a matter of cross-compiling Boost, libusb, and libpixyusb. For the sake of consistency, I used Vagrant to create a Virtual Machine to perform the build. If you want to build these libraries yourself, these are the steps:
@@ -26,4 +26,4 @@ No code modifications were necessary, is was just a matter of cross-compiling Bo
    $ sudo bash pixy_cross_compile.sh
    $ exit
    ```
-4. The libraries and header files will be the __frc_pixy__ directory.
+4. The libraries and header files will be in the __frc_pixy__ directory.
