@@ -1,5 +1,6 @@
 #include "WPILib.h"
 #include "PixyTracker.hpp"
+#include "PixyServer.h"
 
 class Robot: public IterativeRobot {
 private:
@@ -42,6 +43,8 @@ private:
 					target.block.height);
 			printf("Pan: %4d, Tilt: %4d\n", target.pan, target.tilt);
 		}
+
+		PixyServer::pixyInstance()->pixy_put_frame();
 
 		// TODO: Other robot tasks...
 	}
