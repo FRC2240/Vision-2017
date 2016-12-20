@@ -1,20 +1,5 @@
 #include "WPILib.h"
 #include "pixy.h"
-#include <sstream>
-
-#define BLOCK_BUFFER_SIZE          25
-
-#define PIXY_X_CENTER              ((PIXY_MAX_X-PIXY_MIN_X)/2)
-#define PIXY_Y_CENTER              ((PIXY_MAX_Y-PIXY_MIN_Y)/2)
-
-#define PIXY_RCS_PAN_CHANNEL        0
-#define PIXY_RCS_TILT_CHANNEL       1
-
-// PID control parameters
-#define PAN_PROPORTIONAL_GAIN     400
-#define PAN_DERIVATIVE_GAIN       600
-#define TILT_PROPORTIONAL_GAIN    500
-#define TILT_DERIVATIVE_GAIN      700
 
 class PixyTracker {
 public:
@@ -28,6 +13,7 @@ public:
 	PixyTracker();
 	~PixyTracker();
 
+	// startVideo
 	void startVideo();
 
 	// Version
@@ -41,13 +27,28 @@ public:
 	int Track(int signature, Target& target);
 
 private:
-	Block 	blocks [BLOCK_BUFFER_SIZE];
-	int		pixy_init_status;
-	std::stringstream buffer;
-	Image *image;
-	uint8_t *data;
-	std::thread *t1;
-	std::mutex g_i_mutex;
+
+	// Constants
+	const static int kBLOCK_BUFFER_SIZE = 10;
+
+	static constexpr int kPIXY_X_CENTER() { return (PIXY_MAX_X-PIXY_MIN_X)/2; }
+	static constexpr int kPIXY_Y_CENTER() { return (PIXY_MAX_Y-PIXY_MIN_Y)/2; }
+
+	const int kPIXY_RCS_PAN_CHANNEL  = 0;
+	const int kPIXY_RCS_TILT_CHANNEL = 1;
+
+	// PID control parameters
+	const int kPAN_PROPORTIONAL_GAIN  = 400;
+	const int kPAN_DERIVATIVE_GAIN    = 600;
+    const int kTILT_PROPORTIONAL_GAIN = 500;
+    const int kTILT_DERIVATIVE_GAIN   = 700;
+
+	Block 	     blocks [kBLOCK_BUFFER_SIZE];
+	int		     pixy_init_status;
+	Image       *image;
+	uint8_t     *data;
+	std::thread *server_thread;
+	std::mutex   cmd_mutex;
 
 	// PID control variables
 	struct Gimbal {
@@ -58,10 +59,10 @@ private:
 	} pan, tilt;
 
 	void initialize_gimbals();
-	void gimbal_update(struct Gimbal *  gimbal, int32_t error);
+	void gimbal_update(struct Gimbal *gimbal, int32_t error);
 	void serveFrames(PixyTracker *pixy);
 
-	void pixy_put_frame();
+	void putFrame();
 	void interpolateBayer(uint16_t width, uint16_t x, uint16_t y, uint8_t *pixel, uint8_t* r, uint8_t* g, uint8_t* b);
-	int renderBA81(uint8_t renderFlags, uint16_t width, uint16_t height, uint32_t frameLen, uint8_t *frame);
+	int render(uint8_t renderFlags, uint16_t width, uint16_t height, uint32_t frameLen, uint8_t *frame);
 };

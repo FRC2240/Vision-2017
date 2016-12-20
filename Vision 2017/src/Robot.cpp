@@ -1,6 +1,5 @@
 #include "WPILib.h"
 #include "PixyTracker.hpp"
-#include "pixy.h"
 
 class Robot: public IterativeRobot {
 private:
@@ -10,6 +9,7 @@ private:
 	PixyTracker::Target target;
 
 	void RobotInit() {
+		// Create the Pixy instance and start streaming the frames
 		pixy = new PixyTracker();
 		pixy->startVideo();
 	}
@@ -21,14 +21,12 @@ private:
 	}
 
 	void AutonomousPeriodic() {
-
 	}
 
 	void TeleopInit() {
 	}
 
-	void TeleopPeriodic()
-	{
+	void TeleopPeriodic() {
 		int blocks_found = pixy->Track(signature, target);
 
 		if (blocks_found > 0) {
@@ -53,7 +51,6 @@ private:
 	}
 
 	void TestPeriodic() {
-
 	}
 };
 
