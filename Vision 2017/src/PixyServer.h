@@ -10,14 +10,14 @@
 
 #include "WPILib.h"
 
-class PixyServer : public CameraServer {
+class PixyServer  {
+	//uint8_t data[4*320*200];
 public:
-
-	static PixyServer* pixyInstance() {
-		if (!PixyServer::m_server) {
-			PixyServer::m_server = new PixyServer();
-		}
-		return PixyServer::m_server;
+	Image *image;
+	uint8_t *data;
+	PixyServer () {
+		image = imaqCreateImage(IMAQ_IMAGE_RGB, 0);
+		data = (uint8_t*)malloc(4 * (320 - 2) * (200 - 2));
 	}
 
 	void pixy_put_frame() {
@@ -29,9 +29,10 @@ public:
 		uint16_t xwidth;
 		uint16_t ywidth;
 		uint32_t size;
+		int return_value = pixy_command("stop", END_OUT_ARGS, &response, END_IN_ARGS);
 
 
-		int return_value = pixy_command("cam_getFrame",  // String id for remote procedure
+		return_value = pixy_command("cam_getFrame",  // String id for remote procedure
 				INT8(0x21),     // mode
 				INT16(0),        // xoffset
 				INT16(0),         // yoffset
@@ -51,10 +52,10 @@ public:
 		if(return_value==0) {
 			return_value = renderBA81(renderflags,xwidth,ywidth,size,videodata);
 		}
+		return_value = pixy_command("run", END_OUT_ARGS, &response, END_IN_ARGS);
 	}
 
 private:
-	static PixyServer *m_server;
 
 	inline void interpolateBayer(uint16_t width, uint16_t x, uint16_t y, uint8_t *pixel, uint8_t* r, uint8_t* g, uint8_t* b)
 	{
@@ -98,31 +99,29 @@ private:
 
 		// skip first line
 		frame += width;
-		uint8_t data[3*((height-2)*(width-2))];
 
 		uint m = 0;
-		    for (y=1; y<height-1; y++)
-		    {
-		        frame++;
-		        for (x=1; x<width-1; x++, frame++)
-		        {
-		            interpolateBayer(width, x, y, frame, &r, &g, &b);
-		            data[m++] = b;
-		            data[m++] = g;
-		            data[m++] = r;
-		        }
-		        frame++;
-		    }
+		for (y=1; y<height-1; y++)
+		{
+			frame++;
+			for (x=1; x<width-1; x++, frame++)
+			{
+				interpolateBayer(width, x, y, frame, &r, &g, &b);
+				data[m++] = r;
+				data[m++] = g;
+				data[m++] = b;
+				data[m++] = 0xFF; //alpha
+			}
+			frame++;
+		}
 
-
-		SetImageData(data, (width-2)*(height-2));
+		imaqArrayToImage(image, data, width-2, height-2);
+		CameraServer::GetInstance()->SetImage(image);
 
 		return 0;
 	}
 
 };
-
-PixyServer* PixyServer:: m_server = NULL;
 
 
 #endif /* SRC_PIXYSERVER_H_ */

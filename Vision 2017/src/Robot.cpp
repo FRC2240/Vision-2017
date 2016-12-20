@@ -1,15 +1,17 @@
 #include "WPILib.h"
 #include "PixyTracker.hpp"
-#include "PixyServer.h"
+#include "pixy.h"
 
 class Robot: public IterativeRobot {
 private:
 
 	PixyTracker *pixy;
+	int signature = 1;
+	PixyTracker::Target target;
 
 	void RobotInit() {
 		pixy = new PixyTracker();
-		pixy->Start();
+		pixy->startVideo();
 	}
 
 	void DisabledInit() {
@@ -27,13 +29,10 @@ private:
 
 	void TeleopPeriodic()
 	{
-		int blocks_found;
-		int signature = 1;
-		PixyTracker::Target target{0};
-
-		blocks_found = pixy->Track(signature, target);
+		int blocks_found = pixy->Track(signature, target);
 
 		if (blocks_found > 0) {
+#ifdef DEBUG
 			// Print target info
 			printf("sig:%2d x:%4d y:%4d width:%4d height:%4d\n",
 					target.block.signature,
@@ -42,9 +41,8 @@ private:
 					target.block.width,
 					target.block.height);
 			printf("Pan: %4d, Tilt: %4d\n", target.pan, target.tilt);
+#endif
 		}
-
-		PixyServer::pixyInstance()->pixy_put_frame();
 
 		// TODO: Other robot tasks...
 	}
