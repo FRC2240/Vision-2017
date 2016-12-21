@@ -4,33 +4,33 @@
 // Constructor
 PixyTracker::PixyTracker () {
 	// Allocate buffers for frame data and initialize the Pixy
-	image = imaqCreateImage(IMAQ_IMAGE_RGB, 0);
-	data = new uint8_t[4 * (320 - 2) * (200 - 2)];
-	pixy_init_status = pixy_init();
+	m_image = imaqCreateImage(IMAQ_IMAGE_RGB, 0);
+	m_frame_buffer = new uint8_t[4 * (320 - 2) * (200 - 2)];
+	m_pixy_init_status = pixy_init();
 	initialize_gimbals();
 }
 
 // Destructor
 PixyTracker::~PixyTracker () {
 	pixy_close();
-	imaqDispose(image);
-	delete data;
-	data = nullptr;
+	imaqDispose(m_image);
+	delete m_frame_buffer;
+	m_frame_buffer = nullptr;
 }
 
 // startVideo
 void PixyTracker::startVideo() {
 	// Create a thread to grab the Pixy frames and send them
 	// to the Dashboard
-	server_thread = new std::thread(&PixyTracker::serveFrames, this, this);
+	m_server_thread = new std::thread(&PixyTracker::serveFrames, this, this);
 }
 
 // serveFrames
 void PixyTracker::serveFrames(PixyTracker *pixy) {
 	int response;
 	while (true) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(20));
-		std::lock_guard<std::mutex> lock(cmd_mutex);
+		std::this_thread::sleep_for(std::chrono::milliseconds(20)); // don't be a CPU hog
+		std::lock_guard<std::mutex> lock(m_cmd_mutex);
 
 		pixy_command("stop", END_OUT_ARGS, &response, END_IN_ARGS);
 		pixy_command("run", END_OUT_ARGS, &response, END_IN_ARGS);
@@ -56,12 +56,14 @@ std::string PixyTracker::Version() {
 // Track the largest object of the specified signature
 // Return the number of objects found and the data for the largest object
 int PixyTracker::Track(int signature, Target& target) {
-	std::lock_guard<std::mutex> lock(cmd_mutex);
+	std::lock_guard<std::mutex> lock(m_cmd_mutex);
 
-	if (pixy_init_status != 0) {
-		printf("Error: pixy_init() [%d] ", pixy_init_status);
-		pixy_error(pixy_init_status);
-		return pixy_init_status;
+	m_current_target.is_tracking = false;
+
+	if (m_pixy_init_status != 0) {
+		printf("Error: pixy_init() [%d] ", m_pixy_init_status);
+		pixy_error(m_pixy_init_status);
+		return m_pixy_init_status;
 	}
 
 	// No new data
@@ -73,7 +75,7 @@ int PixyTracker::Track(int signature, Target& target) {
 	int blocks_found = 0;
 
 	// Get blocks from Pixy
-	int blocks_copied = pixy_get_blocks(kBLOCK_BUFFER_SIZE, &blocks[0]);
+	int blocks_copied = pixy_get_blocks(kBLOCK_BUFFER_SIZE, &m_blocks[0]);
 
 	if (blocks_copied < 0) {
 		printf("Error: pixy_get_blocks() [%d] ", blocks_copied);
@@ -84,7 +86,7 @@ int PixyTracker::Track(int signature, Target& target) {
 	if (blocks_copied > 0) {
 		for (int i = 0; i < blocks_copied; ++i) {
 			// Ignore blocks that don't match the desired signature
-			if (blocks[i].signature != signature) {
+			if (m_blocks[i].signature != signature) {
 				continue;
 			}
 
@@ -95,23 +97,24 @@ int PixyTracker::Track(int signature, Target& target) {
 			if (target_index < 0) {
 				target_index = i;
 
-				target.block = blocks[i];
+				target.block = m_current_target.block = m_blocks[i];
+				m_current_target.is_tracking = true;
 
 				// Calculate the difference between the center of Pixy's focus and the target.
-				int pan_error  = kPIXY_X_CENTER() - blocks[i].x;
-				int tilt_error = blocks[0].y - kPIXY_Y_CENTER();
+				int pan_error  = kPIXY_X_CENTER() - m_blocks[i].x;
+				int tilt_error = m_blocks[0].y - kPIXY_Y_CENTER();
 
 				// Apply corrections to the pan/tilt with the goal of putting the target in the center of Pixy's focus.
-				gimbal_update(&pan, pan_error);
-				gimbal_update(&tilt, tilt_error);
+				gimbal_update(&m_pan, pan_error);
+				gimbal_update(&m_tilt, tilt_error);
 
-				target.pan = pan.position;
-				target.tilt = tilt.position;
+				target.pan = m_pan.position;
+				target.tilt = m_tilt.position;
 
 				int result; // = pixy_rcs_set_position(PIXY_RCS_PAN_CHANNEL, pan.position);
 				pixy_command("rcs_setPos",
-						INT8(kPIXY_RCS_PAN_CHANNEL),     // mode
-						INT16(pan.position),        // xoffset
+						INT8(kPIXY_RCS_PAN_CHANNEL),  // mode
+						INT16(m_pan.position),        // xoffset
 						END_OUT_ARGS, &result, END_IN_ARGS);
 
 				if (result < 0) {
@@ -120,7 +123,7 @@ int PixyTracker::Track(int signature, Target& target) {
 					return result;
 				}
 
-				result = pixy_rcs_set_position(kPIXY_RCS_TILT_CHANNEL, tilt.position);
+				result = pixy_rcs_set_position(kPIXY_RCS_TILT_CHANNEL, m_tilt.position);
 				if (result < 0) {
 					printf("Error: pixy_rcs_set_position() [%d] ", result);
 					pixy_error(result);
@@ -163,6 +166,7 @@ void PixyTracker::putFrame() {
 
 	if (return_value == 0) {
 		render(renderflags, xwidth, ywidth, size, videodata);
+		sendToDashboard(xwidth, ywidth);
 	}
 }
 
@@ -170,19 +174,19 @@ void PixyTracker::putFrame() {
 // Initialize the servo control
 void PixyTracker::initialize_gimbals()
 {
-	pan.position           = PIXY_RCS_CENTER_POS;
-	pan.previous_error     = 0x80000000L;
-	pan.proportional_gain  = kPAN_PROPORTIONAL_GAIN;
-	pan.derivative_gain    = kPAN_DERIVATIVE_GAIN;
-	tilt.position          = PIXY_RCS_CENTER_POS;
-	tilt.previous_error    = 0x80000000L;
-	tilt.proportional_gain = kTILT_PROPORTIONAL_GAIN;
-	tilt.derivative_gain   = kTILT_DERIVATIVE_GAIN;
+	m_pan.position           = PIXY_RCS_CENTER_POS;
+	m_pan.previous_error     = 0x80000000L;
+	m_pan.proportional_gain  = kPAN_PROPORTIONAL_GAIN;
+	m_pan.derivative_gain    = kPAN_DERIVATIVE_GAIN;
+	m_tilt.position          = PIXY_RCS_CENTER_POS;
+	m_tilt.previous_error    = 0x80000000L;
+	m_tilt.proportional_gain = kTILT_PROPORTIONAL_GAIN;
+	m_tilt.derivative_gain   = kTILT_DERIVATIVE_GAIN;
 }
 
 // gimbal_update
 // Determine servo positions
-void PixyTracker::gimbal_update(struct Gimbal *  gimbal, int32_t error)
+void PixyTracker::gimbal_update(struct Gimbal *gimbal, int32_t error)
 {
 	long int velocity;
 	int32_t  error_delta;
@@ -248,7 +252,7 @@ void PixyTracker::interpolateBayer(uint16_t width, uint16_t x, uint16_t y, uint8
 
 // render
 // Convert the CFA data from Pixy into an RGBA array
-int PixyTracker::render(uint8_t renderFlags, uint16_t width, uint16_t height, uint32_t frameLen, uint8_t *frame)
+void PixyTracker::render(uint8_t renderFlags, uint16_t width, uint16_t height, uint32_t frameLen, uint8_t *frame)
 {
 	uint16_t x, y;
 	uint8_t r, g, b;
@@ -256,24 +260,43 @@ int PixyTracker::render(uint8_t renderFlags, uint16_t width, uint16_t height, ui
 	// skip first line
 	frame += width;
 
-	uint m = 0;
+	uint32_t *pixel = (uint32_t*)m_frame_buffer;
 	for (y=1; y<height-1; y++)
 	{
 		frame++;
 		for (x=1; x<width-1; x++, frame++)
 		{
 			interpolateBayer(width, x, y, frame, &r, &g, &b);
-			data[m++] = r;
-			data[m++] = g;
-			data[m++] = b;
-			data[m++] = 0xFF; //alpha
+		    *pixel++ = (0xff<<24) | (b<<16) | (g<<8) | (r<<0);
 		}
 		frame++;
 	}
+}
+
+void PixyTracker::sendToDashboard(uint16_t width, uint16_t height) {
+	int result;
 
 	// Create an IMAQ image and send it to the Dashboard
-	imaqArrayToImage(image, data, width-2, height-2);
-	CameraServer::GetInstance()->SetImage(image);
+	result = imaqArrayToImage(m_image, m_frame_buffer, width-2, height-2);
+	if (ERR_SUCCESS > result) {
+		printf("imaqArrayToImage() failed: %d\n", result);
+		return;
+	}
 
-	return 0;
+	// If tracking, draw the target bounding box on the image
+	if (m_current_target.is_tracking) {
+		Rect rect = { m_current_target.block.y,
+				      m_current_target.block.x,
+					  m_current_target.block.height,
+					  m_current_target.block.width };
+		rect.left-=rect.width/2;
+		rect.top-=rect.height/2;
+
+		result = imaqDrawShapeOnImage(m_image, m_image, rect, IMAQ_DRAW_VALUE, IMAQ_SHAPE_RECT, double(0xFF));
+		if (ERR_SUCCESS > result) {
+			printf("imaqDrawShapeOnImage() failed: %d\n", result);
+			return;
+		}
+	}
+	CameraServer::GetInstance()->SetImage(m_image);
 }

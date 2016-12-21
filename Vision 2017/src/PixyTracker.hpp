@@ -8,6 +8,7 @@ public:
 		Block block;
 		int pan;
 		int tilt;
+		bool is_tracking;
 	};
 
 	PixyTracker();
@@ -43,12 +44,13 @@ private:
     const int kTILT_PROPORTIONAL_GAIN = 500;
     const int kTILT_DERIVATIVE_GAIN   = 700;
 
-	Block 	     blocks [kBLOCK_BUFFER_SIZE];
-	int		     pixy_init_status;
-	Image       *image;
-	uint8_t     *data;
-	std::thread *server_thread;
-	std::mutex   cmd_mutex;
+	Block 	     m_blocks [kBLOCK_BUFFER_SIZE];
+	Target		 m_current_target;
+	int		     m_pixy_init_status;
+	Image       *m_image;
+	uint8_t     *m_frame_buffer;
+	std::thread *m_server_thread;
+	std::mutex   m_cmd_mutex;
 
 	// PID control variables
 	struct Gimbal {
@@ -56,7 +58,7 @@ private:
 		int32_t previous_error;
 		int32_t proportional_gain;
 		int32_t derivative_gain;
-	} pan, tilt;
+	} m_pan, m_tilt;
 
 	void initialize_gimbals();
 	void gimbal_update(struct Gimbal *gimbal, int32_t error);
@@ -64,5 +66,6 @@ private:
 
 	void putFrame();
 	void interpolateBayer(uint16_t width, uint16_t x, uint16_t y, uint8_t *pixel, uint8_t* r, uint8_t* g, uint8_t* b);
-	int render(uint8_t renderFlags, uint16_t width, uint16_t height, uint32_t frameLen, uint8_t *frame);
+	void render(uint8_t renderFlags, uint16_t width, uint16_t height, uint32_t frameLen, uint8_t *frame);
+	void sendToDashboard(uint16_t width, uint16_t height);
 };
