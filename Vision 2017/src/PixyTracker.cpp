@@ -4,7 +4,6 @@
 // Constructor
 PixyTracker::PixyTracker () {
 	// Allocate buffers for frame data and initialize the Pixy
-	m_image = imaqCreateImage(IMAQ_IMAGE_RGB, 0);
 	m_frame_buffer = new uint8_t[4 * (320 - 2) * (200 - 2)];
 	m_pixy_init_status = pixy_init();
 	initialize_gimbals();
@@ -13,15 +12,28 @@ PixyTracker::PixyTracker () {
 // Destructor
 PixyTracker::~PixyTracker () {
 	pixy_close();
-	imaqDispose(m_image);
 	delete m_frame_buffer;
 	m_frame_buffer = nullptr;
+}
+
+void PixyTracker::printTargetInfo(Target& target) {
+	// Print target info
+	printf("sig:%2d x:%4d y:%4d width:%4d height:%4d\n",
+			target.block.signature,
+			target.block.x,
+			target.block.y,
+			target.block.width,
+			target.block.height);
+	printf("Pan: %4d, Tilt: %4d\n", target.pan, target.tilt);
 }
 
 // startVideo
 void PixyTracker::startVideo() {
 	// Create a thread to grab the Pixy frames and send them
 	// to the Dashboard
+	m_outputStreamStd = CameraServer::GetInstance()->PutVideo("PixyCam", 320-2,200-2);
+	m_image = cv::Mat(200-2,320-2, CV_8UC4, m_frame_buffer);
+
 	m_server_thread = new std::thread(&PixyTracker::serveFrames, this, this);
 }
 
@@ -29,7 +41,7 @@ void PixyTracker::startVideo() {
 void PixyTracker::serveFrames(PixyTracker *pixy) {
 	int response;
 	while (true) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(20)); // don't be a CPU hog
+		std::this_thread::sleep_for(std::chrono::milliseconds(30)); // don't be a CPU hog
 		std::lock_guard<std::mutex> lock(m_cmd_mutex);
 
 		pixy_command("stop", END_OUT_ARGS, &response, END_IN_ARGS);
@@ -147,6 +159,7 @@ void PixyTracker::putFrame() {
 	uint16_t xwidth;
 	uint16_t ywidth;
 	uint32_t size;
+	//printf("get frame\n");
 
 	int return_value = pixy_command("cam_getFrame",  // String id for remote procedure
 			INT8(0x21),     // mode
@@ -199,7 +212,7 @@ void PixyTracker::gimbal_update(struct Gimbal *gimbal, int32_t error)
 		D_gain      = gimbal->derivative_gain;
 
 		/* Using the proportional and derivative gain for the gimbal,
-       calculate the change to the position.  */
+        calculate the change to the position.  */
 		velocity = (error * P_gain + error_delta * D_gain) >> 10;
 
 		gimbal->position += velocity;
@@ -260,43 +273,29 @@ void PixyTracker::render(uint8_t renderFlags, uint16_t width, uint16_t height, u
 	// skip first line
 	frame += width;
 
-	uint32_t *pixel = (uint32_t*)m_frame_buffer;
+	uint32_t *pixel = (uint32_t*)m_image.data;
+
 	for (y=1; y<height-1; y++)
 	{
 		frame++;
 		for (x=1; x<width-1; x++, frame++)
 		{
 			interpolateBayer(width, x, y, frame, &r, &g, &b);
-		    *pixel++ = (0xff<<24) | (b<<16) | (g<<8) | (r<<0);
+			*pixel++ = (0xff<<24) | (r<<16) | (g<<8) | (b<<0);
 		}
 		frame++;
 	}
 }
 
 void PixyTracker::sendToDashboard(uint16_t width, uint16_t height) {
-	int result;
+	// Draw target bounding box
+	cv::rectangle(m_image,
+			      cv::Point(m_current_target.block.x-m_current_target.block.width/2,
+			                m_current_target.block.y-m_current_target.block.height/2),
+			      cv::Point(m_current_target.block.x+m_current_target.block.width/2,
+					        m_current_target.block.y+m_current_target.block.height/2),
+				  cv::Scalar(0,255,255),
+			      2);
 
-	// Create an IMAQ image and send it to the Dashboard
-	result = imaqArrayToImage(m_image, m_frame_buffer, width-2, height-2);
-	if (ERR_SUCCESS > result) {
-		printf("imaqArrayToImage() failed: %d\n", result);
-		return;
-	}
-
-	// If tracking, draw the target bounding box on the image
-	if (m_current_target.is_tracking) {
-		Rect rect = { m_current_target.block.y,
-				      m_current_target.block.x,
-					  m_current_target.block.height,
-					  m_current_target.block.width };
-		rect.left-=rect.width/2;
-		rect.top-=rect.height/2;
-
-		result = imaqDrawShapeOnImage(m_image, m_image, rect, IMAQ_DRAW_VALUE, IMAQ_SHAPE_RECT, double(0xFF));
-		if (ERR_SUCCESS > result) {
-			printf("imaqDrawShapeOnImage() failed: %d\n", result);
-			return;
-		}
-	}
-	CameraServer::GetInstance()->SetImage(m_image);
+	m_outputStreamStd.PutFrame(m_image);
 }

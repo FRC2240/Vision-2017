@@ -1,5 +1,7 @@
 #include "WPILib.h"
 #include "pixy.h"
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/core/core.hpp>
 
 class PixyTracker {
 public:
@@ -19,6 +21,9 @@ public:
 
 	// Version
 	std::string Version();
+
+	//
+	void printTargetInfo(Target& target);
 
 	// Track
 	// Track the largest target of the specified signature
@@ -47,10 +52,11 @@ private:
 	Block 	     m_blocks [kBLOCK_BUFFER_SIZE];
 	Target		 m_current_target;
 	int		     m_pixy_init_status;
-	Image       *m_image;
+	cv::Mat      m_image;
 	uint8_t     *m_frame_buffer;
 	std::thread *m_server_thread;
 	std::mutex   m_cmd_mutex;
+	cs::CvSource m_outputStreamStd;
 
 	// PID control variables
 	struct Gimbal {

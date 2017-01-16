@@ -27,19 +27,16 @@ private:
 	}
 
 	void TeleopPeriodic() {
+		static int frame = 0;
+		++frame;
+
 		int blocks_found = m_pixy->Track(m_signature, m_target);
 
 		if (blocks_found > 0) {
-#ifdef DEBUG
 			// Print target info
-			printf("sig:%2d x:%4d y:%4d width:%4d height:%4d\n",
-					m_target.block.signature,
-					m_target.block.x,
-					m_target.block.y,
-					m_target.block.width,
-					m_target.block.height);
-			printf("Pan: %4d, Tilt: %4d\n", m_target.pan, m_target.tilt);
-#endif
+			if (frame % 50 == 0) {
+			    m_pixy->printTargetInfo(m_target);
+			}
 			// TODO: Decide what to do about the target...
 		}
 

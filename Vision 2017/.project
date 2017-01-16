@@ -3,6 +3,7 @@
 	<name>Vision 2017</name>
 	<comment></comment>
 	<projects>
+		<project>Vision 2017</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>
